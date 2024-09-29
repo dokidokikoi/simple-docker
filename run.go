@@ -4,6 +4,7 @@ import (
 	"docker/cgroups"
 	"docker/cgroups/subsystems"
 	"docker/container"
+	"docker/network"
 	"encoding/json"
 	"math/rand"
 	"os"
@@ -21,7 +22,7 @@ import (
 的进程，然后在子进程中，调用 /proc/self/exe，也就是调用自己，发送 init 参数，调用我们写的 init
 方法，去初始化容器的一些资源。
 */
-func Run(tty bool, comArray []string, imageName, volume, containerName string, envSlice []string, res *subsystems.ResourceConfig) {
+func Run(tty bool, comArray []string, imageName, volume, containerName string, envSlice []string, res *subsystems.ResourceConfig, nw string, portmapping []string) {
 	// 首先生成 10 位数字的容器 ID
 	id := randStringBytes(10)
 	// 如果用户不指定容器名，那么就以容器 id 作容器名
@@ -54,6 +55,21 @@ func Run(tty bool, comArray []string, imageName, volume, containerName string, e
 	cgroupManager.Set(res)
 	// 将容器进程加入到各个 subsystem 挂载的 cgroup 中
 	cgroupManager.Apply(parent.Process.Pid)
+
+	if nw != "" {
+		network.Init()
+		containerInfo := &container.ContainerInfo{
+			Id:          id,
+			Pid:         strconv.Itoa(parent.Process.Pid),
+			Name:        containerName,
+			PortMapping: portmapping,
+		}
+		if err := network.Connect(nw, containerInfo); err != nil {
+			zaplog.L().Error("error connect network", zap.Error(err))
+			return
+		}
+	}
+
 	//  对容器设置完限制后，初始化容器
 	sendInitCommand(comArray, writePipe)
 	if tty {
